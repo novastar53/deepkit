@@ -51,24 +51,30 @@ class NumpyLoader(data.DataLoader):
 
 
 
-def load_CIFAR10(batch_size=128):
+def load_CIFAR10(batch_size=128, augment=True):
 
-    transforms_train = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.RandomCrop(
-            (32, 32),
-            padding=4,
-            fill=0,
-            padding_mode="constant"
-        ),
+    train_transforms = [
+        transforms.ToTensor() ]
+    
+    if augment:
+        train_transforms += [
+            transforms.RandomCrop(
+                (32, 32),
+                padding=4,
+                fill=0,
+                padding_mode="constant"
+            ),
+            transforms.RandomHorizontalFlip()
+        ]
 
-        transforms.RandomHorizontalFlip(),
-
+    train_transforms += [
         transforms.Normalize(
             mean=[0.4914, 0.4822, 0.4465], std=[0.2470, 0.2435, 0.2616]
         ),
         FlattenAndCast(),
-    ])
+    ]
+
+    transforms_train = transforms.Compose(train_transforms)
 
 
     transforms_test = transforms.Compose(
