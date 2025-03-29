@@ -1,3 +1,4 @@
-from .datasets import load_CIFAR10
+from .datasets  import *
+from .loggers import *
 
-__all__ = ["load_CIFAR10"]
+__all__ = ["load_CIFAR10", "DiskLogger"]
