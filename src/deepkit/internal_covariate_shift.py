@@ -84,8 +84,9 @@ def calc_ics(model: nnx.Module, optimizer: nnx.Optimizer, batch: jax.Array, labe
     #print("shifted grad [conv 0]", lookahead_grads.convs[0].conv.kernel.value[0,0,0,0])
     #print("shifted grad [conv 3]", lookahead_grads.convs[3].conv.kernel.value[0,0,0,0])
     # pick out the gradient wrt current layer
-    wrt_layer_grad = grads["convs"][3] 
-    shifted_grad = lookahead_grads["convs"][3]
+    conv_layer_id = int(wrt_layer.split(".")[1])
+    wrt_layer_grad = grads["convs"][conv_layer_id] 
+    shifted_grad = lookahead_grads["convs"][conv_layer_id]
     l2_norm = jax.tree_util.tree_map(lambda x, y: jnp.linalg.norm(x - y), wrt_layer_grad, shifted_grad)
     cos_angle = jax.tree_util.tree_map(cosine, wrt_layer_grad, shifted_grad)
     #print("l2_norm [conv 3]", l2_norm.conv.kernel.value)
