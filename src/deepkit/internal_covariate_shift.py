@@ -42,7 +42,7 @@ def zero_out_prev_optimizer_states(layer_prefix, params):
 
     return jax.tree_util.tree_map_with_path(mask_fn, params)
 
-#@nnx.jit(static_argnums=[4,])
+@nnx.jit(static_argnums=[4,])
 def calc_ics(model: nnx.Module, optimizer: nnx.Optimizer, batch: jax.Array, labels: jax.Array, wrt_layer: str):
 
     def loss_fn(model, batch, targets):
