@@ -43,22 +43,24 @@ def zero_out_prev_optimizer_states(layer_prefix, params):
     return jax.tree_util.tree_map_with_path(mask_fn, params)
 
 @nnx.jit(static_argnums=[4,])
-def calc_ics(model: nnx.Module, optimizer: nnx.Optimizer, batch: jax.Array, labels: jax.Array, wrt_layer: str):
+def calc_ics(model: nnx.Module,
+             optimizer: nnx.Optimizer, 
+             batch: jax.Array, 
+             labels: jax.Array, 
+             wrt_layer: str):
 
     def loss_fn(model, batch, targets):
         logits, activations = model(batch)
         loss = optax.softmax_cross_entropy_with_integer_labels(logits, targets).mean()
         return loss, activations
-    
+
+    # Calculate the loss and gradients using the original optimizer 
+    (loss, activations), grads = nnx.value_and_grad(loss_fn, has_aux=True)(model, batch, labels)
+
     # create copies of the model and optimizer 
     optimizer_copy = optimizer.__deepcopy__()
     #print("weight [conv 0]", optimizer_copy.model.convs[0].conv.kernel.value[0,0,0,0])
     #print("weight [conv 3]", optimizer_copy.model.convs[3].conv.kernel.value[0,0,0,0])
-    # calculate the gradient
-    (loss, _), grads = nnx.value_and_grad(loss_fn, has_aux=True)(optimizer_copy.model, batch, labels)
-    #print("loss", loss)
-    #print("grad [conv 0]", grads.convs[0].conv.kernel.value[0,0,0,0])
-    #print("grad [conv 3]", grads.convs[3].conv.kernel.value[0,0,0,0])
     # zero out the optimizer velocities of the previous layers
     opt_state = optimizer_copy.opt_state
     opt_state = zero_out_prev_optimizer_states(wrt_layer, opt_state)
@@ -78,18 +80,22 @@ def calc_ics(model: nnx.Module, optimizer: nnx.Optimizer, batch: jax.Array, labe
     #print("updated weight [conv 0]", optimizer_copy.model.convs[0].conv.kernel.value[0,0,0,0])
     #print("updated weight [conv 3]", optimizer_copy.model.convs[3].conv.kernel.value[0,0,0,0])
     # calculate the gradient
-    # calculate the lookahead loss and gradients
-    (lookahead_loss, _), lookahead_grads = nnx.value_and_grad(loss_fn, has_aux=True)(optimizer_copy.model, batch, labels)
+    # calculate the lookahead gradients
+    (_, _), lookahead_grads = nnx.value_and_grad(loss_fn, has_aux=True)(optimizer_copy.model, batch, labels)
     #print("lookahead loss", lookahead_loss)
     #print("shifted grad [conv 0]", lookahead_grads.convs[0].conv.kernel.value[0,0,0,0])
     #print("shifted grad [conv 3]", lookahead_grads.convs[3].conv.kernel.value[0,0,0,0])
     # pick out the gradient wrt current layer
     conv_layer_id = int(wrt_layer.split(".")[1])
     wrt_layer_grad = grads["convs"][conv_layer_id] 
-    shifted_grad = lookahead_grads["convs"][conv_layer_id]
-    l2_diff = jax.tree_util.tree_map(lambda x, y: jnp.linalg.norm(x.flatten() - y.flatten()), wrt_layer_grad, shifted_grad)
-    cos_angle = jax.tree_util.tree_map(cosine, wrt_layer_grad, shifted_grad)
+    lookahead_grad = lookahead_grads["convs"][conv_layer_id]
+    # calculate the ICS measures
+    l2_diff = jax.tree_util.tree_map(lambda x, y: jnp.linalg.norm(x.flatten() - y.flatten()), wrt_layer_grad, lookahead_grad)
+    cos_angle = jax.tree_util.tree_map(cosine, wrt_layer_grad, lookahead_grad)
     #print("l2_norm [conv 3]", l2_norm.conv.kernel.value)
     #print("cosine angle [conv 3]", cos_angle.conv.kernel.value)
+    
+    # finally, perform an optimizer step using the original optimizer
+    optimizer.update(grads)
 
-    return l2_diff, cos_angle
+    return loss, activations, grads, l2_diff, cos_angle
