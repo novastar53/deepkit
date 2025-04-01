@@ -105,24 +105,19 @@ def calc_ics(optimizer, batch, labels, grads, wrt_layer_id):
     ## print("cosine angle [conv 3]", cos_angle.conv.kernel.value)
     return l2_diff, cos_angle
  
-@nnx.jit()
+
 def santurkar_ics_step(optimizer: nnx.Optimizer, 
+                       grads,
                        batch: jax.Array, 
                        labels: jax.Array):
 
-    # First create a copy of the optimizer
-    optimizer_copy = optimizer.__deepcopy__()
-    # Then take a regular forward + backward step
-    (loss, activations), grads = nnx.value_and_grad(loss_fn, has_aux=True)(optimizer.model, batch, labels)
-    optimizer.update(grads)
-    # Then run the Santurkar update with the gradients and copied optimizer
     ics_results = []
-    for i in range(len(optimizer_copy.model.convs)):
-        optimizer_copy_copy = optimizer_copy.__deepcopy__()
-        ics_measures = calc_ics(optimizer_copy_copy, batch, labels, grads, i)
+    for i in range(len(optimizer.model.convs)):
+        optimizer_copy = optimizer.__deepcopy__()
+        ics_measures = calc_ics(optimizer_copy, batch, labels, grads, i)
         ics_results.append(ics_measures)
     
-    return loss, activations, grads, ics_results
+    return ics_results
 
 
 def calc_loss_landscape_smoothness(model, batch, targets, lr: float):
