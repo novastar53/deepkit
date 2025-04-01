@@ -51,7 +51,7 @@ def loss_fn(model, batch, targets):
     return loss, activations
 
 
-#@nnx.jit(static_argnums=[4])
+@nnx.jit(static_argnums=[4])
 def calc_ics(optimizer, batch, labels, grads, wrt_layer_id):
 
     wrt_layer = f"convs.{wrt_layer_id}"
