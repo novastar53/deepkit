@@ -13,7 +13,7 @@ def cosine(x: jnp.ndarray, y: jnp.ndarray):
     k = jnp.dot(x, y)
     return k /(jnp.linalg.norm(x)*jnp.linalg.norm(y))
 
-def zero_out_prev_layers(layer_prefix, params):
+def zero_out_next_layers(layer_prefix, params):
     state = {"prev": True}
     def mask_fn(path, leaf):
         if state["prev"] is False: 
@@ -30,9 +30,9 @@ def zero_out_OptVariables(v):
     zeros = jnp.zeros_like(v)
     return nnx.training.optimizer.OptVariable(source_type=nnx.variablelib.Param, value=zeros)
 
-def zero_out_prev_optimizer_states(params, conv_layer_id):
+def zero_out_next_optimizer_states(params, conv_layer_id):
     state = {"prev": True}
-    layer_prefix = f"conv.{conv_layer_id}"
+    layer_prefix = f"convs.{conv_layer_id}"
     def mask_fn(path, leaf):
         if state["prev"] is False: 
             return zero_out_OptVariables(leaf)
@@ -51,42 +51,47 @@ def loss_fn(model, batch, targets):
     return loss, activations
 
 
-@nnx.jit
-def step_fn(model: nnx.Module, optimizer: nnx.Optimizer, batch: jax.Array, labels: jax.Array):
-    (loss, activations), grads = nnx.value_and_grad(loss_fn, has_aux=True)(model, batch, labels)
-    optimizer.update(grads)
-    return loss, activations, grads
-
-@nnx.jit(static_argnums=[4])
+#@nnx.jit(static_argnums=[4])
 def calc_ics(optimizer, batch, labels, grads, wrt_layer_id):
 
-    wrt_layer = f"conv.{wrt_layer_id}"
+    wrt_layer = f"convs.{wrt_layer_id}"
+    # print("layer id", wrt_layer)
     #nnx.display(opt_state)
-    # Set the velocities of the previous layers to zero to preven them from updating
+    # print("grad [conv 0]", grads.convs[0].conv.kernel.value[0,0,0,0])
+    # print(f"grad [conv {wrt_layer_id}]", grads.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
+    # print(f"grad [conv 9]", grads.convs[9].conv.kernel.value[0,0,0,0])
+    # Set the velocities of the next layers to zero to prevent them from updating
     # the weights 
-    opt_state = zero_out_prev_optimizer_states(optimizer.opt_state, wrt_layer_id)
-    optimizer.opt_state = opt_state
-    #nnx.display(opt_state)
-    #print("param [conv 0]", optimizer_copy.model.convs[0].conv.kernel.value[0,0,0,0])
-    #print("param [conv 3]", optimizer_copy.model.convs[3].conv.kernel.value[0,0,0,0])
-    #print("opt state [conv 0]", optimizer_copy.opt_state[0].trace.convs[0].conv.kernel.value[0,0,0,0])
-    #print("opt state [conv 3]", optimizer_copy.opt_state[0].trace.convs[3].conv.kernel.value[0,0,0,0])
+    # print("opt state [conv 0]", optimizer.opt_state[0].trace.convs[0].conv.kernel.value[0,0,0,0])
+    # print(f"opt state [conv {wrt_layer_id}]", optimizer.opt_state[0].trace.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
+    # print(f"opt state [conv 9]", optimizer.opt_state[0].trace.convs[9].conv.kernel.value[0,0,0,0])
+    masked_opt_state = zero_out_next_optimizer_states(optimizer.opt_state, wrt_layer_id)
+    optimizer.opt_state = masked_opt_state
+    # print("masked opt state [conv 0]", masked_opt_state[0].trace.convs[0].conv.kernel.value[0,0,0,0])
+    # print(f"masked opt state [conv {wrt_layer_id}]", masked_opt_state[0].trace.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
+    # print(f"masked opt state [conv 9]", masked_opt_state[0].trace.convs[9].conv.kernel.value[0,0,0,0])
 
-    # zero out the gradients of the previous layers
-    prev_grads = zero_out_prev_layers(wrt_layer, grads)
-    #print("prev grad [conv 0]", prev_grads.convs[0].conv.kernel.value[0,0,0,0])
-    #print("prev grad [conv 3]", prev_grads.convs[3].conv.kernel.value[0,0,0,0])
+    # zero out the gradients of the next layers
+    masked_grads = zero_out_next_layers(wrt_layer, grads)
+    # print("masked grad [conv 0]", masked_grads.convs[0].conv.kernel.value[0,0,0,0])
+    # print(f"masked grad [conv {wrt_layer_id}]", masked_grads.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
+    # print(f"masked grad [conv 9]", masked_grads.convs[9].conv.kernel.value[0,0,0,0])
 
     # update the weights of the previous layers
-    optimizer.update(prev_grads)
-    #print("updated weight [conv 0]", optimizer_copy.model.convs[0].conv.kernel.value[0,0,0,0])
-    #print("updated weight [conv 3]", optimizer_copy.model.convs[3].conv.kernel.value[0,0,0,0])
+    # print("weight [conv 0]", optimizer.model.convs[0].conv.kernel.value[0,0,0,0])
+    # print(f"weight [conv {wrt_layer_id}]", optimizer.model.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
+    # print(f"weight [conv 9]", optimizer.model.convs[9].conv.kernel.value[0,0,0,0])
+    optimizer.update(masked_grads)
+    # print("updated weight [conv 0]", optimizer.model.convs[0].conv.kernel.value[0,0,0,0])
+    # print(f"updated weight [conv {wrt_layer_id}]", optimizer.model.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
+    # print(f"updated weight [conv 9]", optimizer.model.convs[9].conv.kernel.value[0,0,0,0])
 
     # calculate the lookahead gradients
     (_, _), lookahead_grads = nnx.value_and_grad(loss_fn, has_aux=True)(optimizer.model, batch, labels)
-    #print("lookahead loss", lookahead_loss)
-    #print("shifted grad [conv 0]", lookahead_grads.convs[0].conv.kernel.value[0,0,0,0])
-    #print("shifted grad [conv 3]", lookahead_grads.convs[3].conv.kernel.value[0,0,0,0])
+    ## print("lookahead loss", lookahead_loss)
+    # print("lookahead grad [conv 0]", lookahead_grads.convs[0].conv.kernel.value[0,0,0,0])
+    # print(f"lookahead grad [conv {wrt_layer_id}]", lookahead_grads.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
+    # print(f"lookahead grad [conv 9]", lookahead_grads.convs[9].conv.kernel.value[0,0,0,0])
 
     # pick out the gradient wrt current layer
     wrt_layer_grad = grads["convs"][wrt_layer_id] 
@@ -96,8 +101,8 @@ def calc_ics(optimizer, batch, labels, grads, wrt_layer_id):
     l2_diff = jax.tree_util.tree_map(lambda x, y: jnp.linalg.norm(x.flatten() - y.flatten()), wrt_layer_grad, lookahead_grad)
     cos_angle = jax.tree_util.tree_map(cosine, wrt_layer_grad, lookahead_grad)
 
-    #print("l2_norm [conv 3]", l2_norm.conv.kernel.value)
-    #print("cosine angle [conv 3]", cos_angle.conv.kernel.value)
+    ## print("l2_norm [conv 3]", l2_norm.conv.kernel.value)
+    ## print("cosine angle [conv 3]", cos_angle.conv.kernel.value)
     return l2_diff, cos_angle
  
 
