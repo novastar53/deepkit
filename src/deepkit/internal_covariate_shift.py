@@ -138,21 +138,23 @@ def loss_landscape_step(model, batch, targets, loss, grads, lr: float, step_size
 
     _calc = partial(calc_loss, model, grads, lr)
     scales = jnp.arange(0.5, 4.0+step_size, step_size)
-    _vmap_calc = jax.jit(jax.vmap(_calc, in_axes=0))
+    _vmap_calc = nnx.jit(nnx.vmap(_calc, in_axes=0))
     losses = _vmap_calc(scales)
-    min_loss = min(min(losses), loss)
-    max_loss = max(max(losses), loss)
+    min_loss = min(jnp.min(losses), loss)
+    max_loss = max(jnp.max(losses), loss)
     return min_loss, max_loss
 
 def grad_landscape_step(model, batch, targets, lr: float):
 
-    def loss_fn(model, batch, targets):
-        logits, _ = model(batch)
-        loss = optax.softmax_cross_entropy_with_integer_labels(logits, targets).mean()
-        return loss
 
     @nnx.jit
     def calc_norm(model, grads, lr, s):
+
+        def loss_fn(model, batch, targets):
+            logits, _ = model(batch)
+            loss = optax.softmax_cross_entropy_with_integer_labels(logits, targets).mean()
+            return loss
+
         graphdef, state, batch_stats = nnx.split(model, nnx.Param, nnx.BatchStat)
         updated_state = jax.tree_util.tree_map(lambda x, y: x - lr*s*y, state, grads)
         model = nnx.merge(graphdef, updated_state, batch_stats)
