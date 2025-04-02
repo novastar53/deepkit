@@ -136,14 +136,11 @@ def loss_landscape_step(model, batch, targets, loss, grads, lr: float, step_size
         loss = optax.softmax_cross_entropy_with_integer_labels(logits, targets).mean()
         return loss
 
-    min_loss, max_loss = float('inf'), 0
-    min_loss = min(loss, min_loss)
-    max_loss = max(loss, max_loss)
+    _calc = partial(calc_loss, model, grads, lr)
     scales = jnp.arange(0.5, 4.0+step_size, step_size)
-    for s in scales:
-        loss = calc_loss(model, grads, lr, s)
-        min_loss = min(loss, min_loss)
-        max_loss = max(loss, max_loss)
+    losses = jax.lax.map(_calc, scales)
+    min_loss = min(min(losses), loss)
+    max_loss = max(max(losses), loss)
     return min_loss, max_loss
 
 def grad_landscape_step(model, batch, targets, lr: float):
