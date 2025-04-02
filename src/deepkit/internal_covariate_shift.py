@@ -120,7 +120,7 @@ def santurkar_ics_step(optimizer: nnx.Optimizer,
     return ics_results
 
 
-def calc_loss_landscape_smoothness(model, batch, targets, lr: float):
+def loss_landscape_smoothness_step(model, batch, targets, lr: float):
 
     def loss_fn(model, batch, targets):
         logits, activations = model(batch)
@@ -132,14 +132,15 @@ def calc_loss_landscape_smoothness(model, batch, targets, lr: float):
         graphdef, state, batch_stats = nnx.split(model, nnx.Param, nnx.BatchStat)
         updated_state = jax.tree_util.tree_map(lambda x, y: x - lr*s*y, state, grads)
         model = nnx.merge(graphdef, updated_state, batch_stats)
-        (loss, _), _ = nnx.value_and_grad(loss_fn, has_aux=True)(model, batch, targets)
+        (loss, _), grad = nnx.value_and_grad(loss_fn, has_aux=True)(model, batch, targets)
         return loss
 
     (loss, _), grads = nnx.value_and_grad(loss_fn, has_aux=True)(model, batch, targets)
     scales = jnp.arange(0.5, 4.1, 0.1)
-    losses = []
+    losses = [loss]
+    #grad_norms = 
     for s in scales:
         loss = calc_loss(model, grads, lr, s)
         losses.append(loss)
-    return losses
+    return min(losses), max(losses)
 
