@@ -125,8 +125,11 @@ def santurkar_ics_step(optimizer: nnx.Optimizer,
     return ics_results
 
 
-@nnx.jit(static_argnums=[5, 6])
-def loss_landscape_step(model, batch, targets, loss, grads, lr: float, step_size=0.3):
+@nnx.jit(static_argnums=[5, 6, 7, 8])
+def loss_landscape_step(model, batch, targets, loss, grads, lr: float, 
+                        min_step=0.5,
+                        max_step=4.2,
+                        step_size=0.3):
 
     def calc_loss(model, grads, lr, s):
         graphdef, state, batch_stats = nnx.split(model, nnx.Param, nnx.BatchStat)
@@ -137,7 +140,7 @@ def loss_landscape_step(model, batch, targets, loss, grads, lr: float, step_size
         return loss
 
     _calc = partial(calc_loss, model, grads, lr)
-    scales = jnp.arange(0.5, 4.0+step_size, step_size)
+    scales = jnp.arange(min_step, max_step, step_size)
     _vmap_calc = nnx.vmap(_calc, in_axes=0)
     losses = _vmap_calc(scales)
     min_loss = jnp.min(losses)
