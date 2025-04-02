@@ -6,6 +6,11 @@ import jax.numpy as jnp
 import optax
 import flax.nnx as nnx
 
+def calc_l2_norm(x: nnx.statelib.State):
+    leaves, _ = jax.tree_util.tree_flatten(x)
+    squared_sum = sum([jnp.sum(jnp.square(l)) for l in leaves])
+    return jnp.sqrt(squared_sum)
+
 
 def cosine(x: jnp.ndarray, y: jnp.ndarray):
     x = x.flatten()
@@ -132,15 +137,17 @@ def loss_landscape_smoothness_step(model, batch, targets, lr: float):
         graphdef, state, batch_stats = nnx.split(model, nnx.Param, nnx.BatchStat)
         updated_state = jax.tree_util.tree_map(lambda x, y: x - lr*s*y, state, grads)
         model = nnx.merge(graphdef, updated_state, batch_stats)
-        (loss, _), grad = nnx.value_and_grad(loss_fn, has_aux=True)(model, batch, targets)
-        return loss
+        (loss, _), grads = nnx.value_and_grad(loss_fn, has_aux=True)(model, batch, targets)
+        norm = calc_l2_norm(grads)
+        return loss, norm
 
     (loss, _), grads = nnx.value_and_grad(loss_fn, has_aux=True)(model, batch, targets)
     scales = jnp.arange(0.5, 4.1, 0.1)
     losses = [loss]
-    #grad_norms = 
+    grad_norms = [calc_l2_norm(grads)]
     for s in scales:
-        loss = calc_loss(model, grads, lr, s)
+        loss, norm = calc_loss(model, grads, lr, s)
         losses.append(loss)
-    return min(losses), max(losses)
+        grad_norms.append(norm)
+    return min(losses), max(losses), min(grad_norms), max(grad_norms)
 
