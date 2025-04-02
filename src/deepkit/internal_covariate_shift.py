@@ -125,7 +125,7 @@ def santurkar_ics_step(optimizer: nnx.Optimizer,
     return ics_results
 
 
-@nnx.jit
+@nnx.jit(static_argnums=[5, 6])
 def loss_landscape_step(model, batch, targets, loss, grads, lr: float, step_size=0.3):
 
     def calc_loss(model, grads, lr, s):
