@@ -138,7 +138,7 @@ def loss_landscape_step(model, batch, targets, loss, grads, lr: float, step_size
 
     _calc = partial(calc_loss, model, grads, lr)
     scales = jnp.arange(0.5, 4.0+step_size, step_size)
-    _vmap_calc = nnx.jit(nnx.vmap(_calc, in_axes=0))
+    _vmap_calc = nnx.vmap(_calc, in_axes=0)
     losses = _vmap_calc(scales)
     min_loss = jnp.min(losses)
     max_loss = jnp.max(losses)
