@@ -127,7 +127,6 @@ def santurkar_ics_step(optimizer: nnx.Optimizer,
 
 def loss_landscape_step(model, batch, targets, loss, grads, lr: float, step_size=0.3):
 
-    @nnx.jit
     def calc_loss(model, grads, lr, s):
         graphdef, state, batch_stats = nnx.split(model, nnx.Param, nnx.BatchStat)
         updated_state = jax.tree_util.tree_map(lambda x, y: x - lr*s*y, state, grads)
@@ -137,8 +136,9 @@ def loss_landscape_step(model, batch, targets, loss, grads, lr: float, step_size
         return loss
 
     _calc = partial(calc_loss, model, grads, lr)
+    _jit_calc  = nnx.jit(partial(jax.lax.map, _calc))
     scales = jnp.arange(0.5, 4.0+step_size, step_size)
-    losses = jax.lax.map(_calc, scales)
+    losses = _jit_calc(scales)
     min_loss = min(min(losses), loss)
     max_loss = max(max(losses), loss)
     return min_loss, max_loss
