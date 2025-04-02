@@ -142,7 +142,7 @@ def loss_landscape_smoothness_step(model, batch, targets, lr: float):
         return loss, norm
 
     (loss, _), grads = nnx.value_and_grad(loss_fn, has_aux=True)(model, batch, targets)
-    scales = jnp.arange(0.5, 4.1, 0.1)
+    scales = jnp.arange(0.5, 4.2, 0.3)
     losses = [loss]
     grad_norms = [calc_l2_norm(grads)]
     for s in scales:
