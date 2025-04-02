@@ -127,13 +127,14 @@ def santurkar_ics_step(optimizer: nnx.Optimizer,
 
 def loss_landscape_step(model, batch, targets, lr: float, step_size=0.3):
 
-    def loss_fn(model, batch, targets):
-        logits, _ = model(batch)
-        loss = optax.softmax_cross_entropy_with_integer_labels(logits, targets).mean()
-        return loss
-
     @nnx.jit
     def calc_loss(model, grads, lr, s):
+
+        def loss_fn(model, batch, targets):
+            logits, _ = model(batch)
+            loss = optax.softmax_cross_entropy_with_integer_labels(logits, targets).mean()
+            return loss
+
         graphdef, state, batch_stats = nnx.split(model, nnx.Param, nnx.BatchStat)
         updated_state = jax.tree_util.tree_map(lambda x, y: x - lr*s*y, state, grads)
         model = nnx.merge(graphdef, updated_state, batch_stats)
