@@ -192,7 +192,8 @@ def grad_landscape_step(
     _grad_fn = partial(calc_norm, model, grads, lr)
     scales = jnp.arange(min_step, max_step, step_size)
     _vmap_grad_fn = nnx.vmap(_grad_fn, in_axes=0)
+    norm = calc_l2_norm(grads)
     grad_norms = _vmap_grad_fn(scales)
     min_norm = jnp.min(grad_norms)
     max_norm = jnp.max(grad_norms)
-    return min_norm, max_norm
+    return jnp.abs(norm - min_norm), jnp.abs(norm - max_norm)
