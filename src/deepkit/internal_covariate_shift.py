@@ -125,8 +125,8 @@ def santurkar_ics_step(optimizer: nnx.Optimizer,
     return ics_results
 
 
-@nnx.jit(static_argnums=[5, 6, 7, 8])
-def loss_landscape_step(model, batch, targets, loss, grads, lr: float, 
+@nnx.jit(static_argnums=[4, 5, 6, 7])
+def loss_landscape_step(model, batch, targets, grads, lr: float, 
                         min_step=0.5,
                         max_step=4.2,
                         step_size=0.3):
@@ -135,7 +135,7 @@ def loss_landscape_step(model, batch, targets, loss, grads, lr: float,
         graphdef, state, batch_stats = nnx.split(model, nnx.Param, nnx.BatchStat)
         updated_state = jax.tree_util.tree_map(lambda x, y: x - lr*s*y, state, grads)
         model = nnx.merge(graphdef, updated_state, batch_stats)
-        logits, _ = model(batch)
+        logits, _= model(batch)
         loss = optax.softmax_cross_entropy_with_integer_labels(logits, targets).mean()
         return loss
 
@@ -147,10 +147,12 @@ def loss_landscape_step(model, batch, targets, loss, grads, lr: float,
     max_loss = jnp.max(losses)
     return min_loss, max_loss
 
-def grad_landscape_step(model, batch, targets, lr: float):
+@nnx.jit(static_argnums=[4, 5, 6, 7])
+def grad_landscape_step(model, batch, targets, grads, lr: float,
+                        min_step=0.5,
+                        max_step=4.2,
+                        step_size=0.3):
 
-
-    @nnx.jit
     def calc_norm(model, grads, lr, s):
 
         def loss_fn(model, batch, targets):
@@ -161,19 +163,15 @@ def grad_landscape_step(model, batch, targets, lr: float):
         graphdef, state, batch_stats = nnx.split(model, nnx.Param, nnx.BatchStat)
         updated_state = jax.tree_util.tree_map(lambda x, y: x - lr*s*y, state, grads)
         model = nnx.merge(graphdef, updated_state, batch_stats)
-        __, grads = nnx.value_and_grad(loss_fn)(model, batch, targets)
+        grads = nnx.grad(loss_fn)(model, batch, targets)
         norm = calc_l2_norm(grads)
         return norm
 
-    min_norm, max_norm = float('inf'), 0
-    _, grads = nnx.value_and_grad(loss_fn)(model, batch, targets)
-    scales = jnp.arange(0.5, 4.2, 0.3)
-    grad_norm = calc_l2_norm(grads)
-    min_norm = min(grad_norm, min_norm)
-    max_norm = max(grad_norm, max_norm)
-    for s in scales:
-        grad_norm = calc_norm(model, grads, lr, s)
-        min_norm = min(grad_norm, min_norm)
-        max_norm = max(grad_norm, max_norm)
+    _grad_fn = partial(calc_norm, model, grads, lr)
+    scales = jnp.arange(min_step, max_step, step_size)
+    _vmap_grad_fn = nnx.vmap(_grad_fn, in_axes=0)
+    grad_norms = _vmap_grad_fn(scales)
+    min_norm = jnp.min(grad_norms)
+    max_norm = jnp.max(grad_norms)
     return min_norm, max_norm
 
