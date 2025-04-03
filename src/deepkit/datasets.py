@@ -8,6 +8,7 @@ __all__ = ["load_CIFAR10"]
 
 # CIFAR-10
 
+
 def numpy_collate(batch):
     if isinstance(batch[0], np.ndarray):
         return np.stack(batch)
@@ -17,9 +18,11 @@ def numpy_collate(batch):
     else:
         return np.array(batch)
 
+
 class FlattenAndCast(object):
     def __call__(self, pic):
         return np.array(pic.permute(1, 2, 0), dtype=jnp.float32)
+
 
 class NumpyLoader(data.DataLoader):
     def __init__(
@@ -50,21 +53,14 @@ class NumpyLoader(data.DataLoader):
         )
 
 
-
 def load_CIFAR10(batch_size=128, augment=True):
 
-    train_transforms = [
-        transforms.ToTensor() ]
-    
+    train_transforms = [transforms.ToTensor()]
+
     if augment:
         train_transforms += [
-            transforms.RandomCrop(
-                (32, 32),
-                padding=4,
-                fill=0,
-                padding_mode="constant"
-            ),
-            transforms.RandomHorizontalFlip()
+            transforms.RandomCrop((32, 32), padding=4, fill=0, padding_mode="constant"),
+            transforms.RandomHorizontalFlip(),
         ]
 
     train_transforms += [
@@ -75,7 +71,6 @@ def load_CIFAR10(batch_size=128, augment=True):
     ]
 
     transforms_train = transforms.Compose(train_transforms)
-
 
     transforms_test = transforms.Compose(
         [
@@ -100,15 +95,15 @@ def load_CIFAR10(batch_size=128, augment=True):
         batch_size=batch_size,
         shuffle=True,
         num_workers=0,
-        pin_memory=False
+        pin_memory=False,
     )
 
-    test_loader= NumpyLoader(
+    test_loader = NumpyLoader(
         test_dataset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=0,
-        pin_memory=False
+        pin_memory=False,
     )
 
     return train_loader, test_loader

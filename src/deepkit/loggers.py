@@ -6,8 +6,10 @@ from pathlib import Path
 
 __all__ = ["DiskLogger"]
 
+
 def generate_random_code(length=6):
-    return ''.join(random.choices(string.ascii_lowercase, k=length))
+    return "".join(random.choices(string.ascii_lowercase, k=length))
+
 
 class DiskLogger:
     def __init__(self, name, save_dir="./logs"):
@@ -27,16 +29,15 @@ class DiskLogger:
 
     def __call__(self):
         if not self.files:
-          self.files = sorted([f for f in os.listdir(self.save_dir)])
+            self.files = sorted([f for f in os.listdir(self.save_dir)])
         for filename in self.files:
-          filepath = os.path.join(self.save_dir, filename)
-          data = np.load(filepath, allow_pickle=True)
-          yield data
+            filepath = os.path.join(self.save_dir, filename)
+            data = np.load(filepath, allow_pickle=True)
+            yield data
 
     def __getitem__(self, i):
-       if not self.files:
-        self.files = sorted([f for f in os.listdir(self.save_dir)])
-       filepath = os.path.join(self.save_dir, self.files[i])
-       data = np.load(filepath, allow_pickle=True)
-       return data
-
+        if not self.files:
+            self.files = sorted([f for f in os.listdir(self.save_dir)])
+        filepath = os.path.join(self.save_dir, self.files[i])
+        data = np.load(filepath, allow_pickle=True)
+        return data

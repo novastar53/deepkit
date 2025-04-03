@@ -8,3 +8,8 @@ dependencies = [
     "jax>=0.5.3",
     "torchvision>=0.21.0",
 ]
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+]

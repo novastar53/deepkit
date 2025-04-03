@@ -6,6 +6,7 @@ import jax.numpy as jnp
 import optax
 import flax.nnx as nnx
 
+
 def calc_l2_norm(x: nnx.statelib.State):
     leaves, _ = jax.tree_util.tree_flatten(x)
     squared_sum = sum([jnp.sum(jnp.square(l)) for l in leaves])
@@ -16,34 +17,45 @@ def cosine(x: jnp.ndarray, y: jnp.ndarray):
     x = x.flatten()
     y = y.flatten()
     k = jnp.dot(x, y)
-    return k /(jnp.linalg.norm(x)*jnp.linalg.norm(y))
+    return k / (jnp.linalg.norm(x) * jnp.linalg.norm(y))
+
 
 def zero_out_next_layers(layer_prefix, params):
     state = {"prev": True}
+
     def mask_fn(path, leaf):
-        if state["prev"] is False: 
+        if state["prev"] is False:
             return jnp.zeros_like(leaf)
-        path = ".".join([str(p.key) for p in path if isinstance(p, jax.tree_util.DictKey)])
+        path = ".".join(
+            [str(p.key) for p in path if isinstance(p, jax.tree_util.DictKey)]
+        )
         if layer_prefix in path:
-            state["prev"] = False 
+            state["prev"] = False
             return jnp.zeros_like(leaf)
         return leaf
 
     return jax.tree_util.tree_map_with_path(mask_fn, params)
 
+
 def zero_out_OptVariables(v):
     zeros = jnp.zeros_like(v)
-    return nnx.training.optimizer.OptVariable(source_type=nnx.variablelib.Param, value=zeros)
+    return nnx.training.optimizer.OptVariable(
+        source_type=nnx.variablelib.Param, value=zeros
+    )
+
 
 def zero_out_next_optimizer_states(params, conv_layer_id):
     state = {"prev": True}
     layer_prefix = f"convs.{conv_layer_id}"
+
     def mask_fn(path, leaf):
-        if state["prev"] is False: 
+        if state["prev"] is False:
             return zero_out_OptVariables(leaf)
-        path = ".".join([str(p.key) for p in path if isinstance(p, jax.tree_util.DictKey)])
+        path = ".".join(
+            [str(p.key) for p in path if isinstance(p, jax.tree_util.DictKey)]
+        )
         if layer_prefix in path:
-            state["prev"] = False 
+            state["prev"] = False
             return zero_out_OptVariables(leaf)
         return leaf
 
@@ -61,12 +73,12 @@ def calc_ics(optimizer, batch, labels, grads, wrt_layer_id):
 
     wrt_layer = f"convs.{wrt_layer_id}"
     # print("layer id", wrt_layer)
-    #nnx.display(opt_state)
+    # nnx.display(opt_state)
     # print("grad [conv 0]", grads.convs[0].conv.kernel.value[0,0,0,0])
     # print(f"grad [conv {wrt_layer_id}]", grads.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
     # print(f"grad [conv 9]", grads.convs[9].conv.kernel.value[0,0,0,0])
     # Set the velocities of the next layers to zero to prevent them from updating
-    # the weights 
+    # the weights
     # print("opt state [conv 0]", optimizer.opt_state[0].trace.convs[0].conv.kernel.value[0,0,0,0])
     # print(f"opt state [conv {wrt_layer_id}]", optimizer.opt_state[0].trace.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
     # print(f"opt state [conv 9]", optimizer.opt_state[0].trace.convs[9].conv.kernel.value[0,0,0,0])
@@ -92,50 +104,56 @@ def calc_ics(optimizer, batch, labels, grads, wrt_layer_id):
     # print(f"updated weight [conv 9]", optimizer.model.convs[9].conv.kernel.value[0,0,0,0])
 
     # calculate the lookahead gradients
-    (_, _), lookahead_grads = nnx.value_and_grad(loss_fn, has_aux=True)(optimizer.model, batch, labels)
+    (_, _), lookahead_grads = nnx.value_and_grad(loss_fn, has_aux=True)(
+        optimizer.model, batch, labels
+    )
     ## print("lookahead loss", lookahead_loss)
     # print("lookahead grad [conv 0]", lookahead_grads.convs[0].conv.kernel.value[0,0,0,0])
     # print(f"lookahead grad [conv {wrt_layer_id}]", lookahead_grads.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
     # print(f"lookahead grad [conv 9]", lookahead_grads.convs[9].conv.kernel.value[0,0,0,0])
 
     # pick out the gradient wrt current layer
-    wrt_layer_grad = grads["convs"][wrt_layer_id] 
+    wrt_layer_grad = grads["convs"][wrt_layer_id]
     lookahead_grad = lookahead_grads["convs"][wrt_layer_id]
 
     # calculate the ICS measures
-    l2_diff = jax.tree_util.tree_map(lambda x, y: jnp.linalg.norm(x.flatten() - y.flatten()), wrt_layer_grad, lookahead_grad)
+    l2_diff = jax.tree_util.tree_map(
+        lambda x, y: jnp.linalg.norm(x.flatten() - y.flatten()),
+        wrt_layer_grad,
+        lookahead_grad,
+    )
     cos_angle = jax.tree_util.tree_map(cosine, wrt_layer_grad, lookahead_grad)
 
     ## print("l2_norm [conv 3]", l2_norm.conv.kernel.value)
     ## print("cosine angle [conv 3]", cos_angle.conv.kernel.value)
     return l2_diff, cos_angle
- 
 
-def santurkar_ics_step(optimizer: nnx.Optimizer, 
-                       grads,
-                       batch: jax.Array, 
-                       labels: jax.Array):
+
+def santurkar_ics_step(
+    optimizer: nnx.Optimizer, grads, batch: jax.Array, labels: jax.Array
+):
 
     ics_results = []
     for i in range(len(optimizer.model.convs)):
         optimizer_copy = optimizer.__deepcopy__()
         ics_measures = calc_ics(optimizer_copy, batch, labels, grads, i)
         ics_results.append(ics_measures)
-    
+
     return ics_results
 
 
 @nnx.jit(static_argnums=[4, 5, 6, 7])
-def loss_landscape_step(model, batch, targets, grads, lr: float, 
-                        min_step=0.5,
-                        max_step=4.2,
-                        step_size=0.3):
+def loss_landscape_step(
+    model, batch, targets, grads, lr: float, min_step=0.5, max_step=4.2, step_size=0.3
+):
 
     def calc_loss(model, grads, lr, s):
         graphdef, state, batch_stats = nnx.split(model, nnx.Param, nnx.BatchStat)
-        updated_state = jax.tree_util.tree_map(lambda x, y: x - lr*s*y, state, grads)
+        updated_state = jax.tree_util.tree_map(
+            lambda x, y: x - lr * s * y, state, grads
+        )
         model = nnx.merge(graphdef, updated_state, batch_stats)
-        logits, _= model(batch)
+        logits, _ = model(batch)
         loss = optax.softmax_cross_entropy_with_integer_labels(logits, targets).mean()
         return loss
 
@@ -147,21 +165,25 @@ def loss_landscape_step(model, batch, targets, grads, lr: float,
     max_loss = jnp.max(losses)
     return min_loss, max_loss
 
+
 @nnx.jit(static_argnums=[4, 5, 6, 7])
-def grad_landscape_step(model, batch, targets, grads, lr: float,
-                        min_step=0.5,
-                        max_step=4.2,
-                        step_size=0.3):
+def grad_landscape_step(
+    model, batch, targets, grads, lr: float, min_step=0.5, max_step=4.2, step_size=0.3
+):
 
     def calc_norm(model, grads, lr, s):
 
         def loss_fn(model, batch, targets):
             logits, _ = model(batch)
-            loss = optax.softmax_cross_entropy_with_integer_labels(logits, targets).mean()
+            loss = optax.softmax_cross_entropy_with_integer_labels(
+                logits, targets
+            ).mean()
             return loss
 
         graphdef, state, batch_stats = nnx.split(model, nnx.Param, nnx.BatchStat)
-        updated_state = jax.tree_util.tree_map(lambda x, y: x - lr*s*y, state, grads)
+        updated_state = jax.tree_util.tree_map(
+            lambda x, y: x - lr * s * y, state, grads
+        )
         model = nnx.merge(graphdef, updated_state, batch_stats)
         grads = nnx.grad(loss_fn)(model, batch, targets)
         norm = calc_l2_norm(grads)
@@ -174,4 +196,3 @@ def grad_landscape_step(model, batch, targets, grads, lr: float,
     min_norm = jnp.min(grad_norms)
     max_norm = jnp.max(grad_norms)
     return min_norm, max_norm
-
