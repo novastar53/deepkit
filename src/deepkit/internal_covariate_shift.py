@@ -185,15 +185,15 @@ def grad_landscape_step(
             lambda x, y: x - lr * s * y, state, grads
         )
         model = nnx.merge(graphdef, updated_state, batch_stats)
-        grads = nnx.grad(loss_fn)(model, batch, targets)
-        norm = calc_l2_norm(grads)
-        return norm
+        new_grads = nnx.grad(loss_fn)(model, batch, targets)
+        grad_diff = jax.tree_util.tree_map(lambda x, y: x - y, new_grads, grads)
+        l2 = calc_l2_norm(grad_diff)
+        return l2
 
     _grad_fn = partial(calc_norm, model, grads, lr)
     scales = jnp.arange(min_step, max_step, step_size)
     _vmap_grad_fn = nnx.vmap(_grad_fn, in_axes=0)
-    norm = calc_l2_norm(grads)
-    grad_norms = _vmap_grad_fn(scales)
-    min_norm = jnp.min(grad_norms)
-    max_norm = jnp.max(grad_norms)
-    return jnp.abs(norm - min_norm), jnp.abs(norm - max_norm)
+    grad_diffs = _vmap_grad_fn(scales)
+    min_diff = jnp.min(grad_diffs)
+    max_diff = jnp.max(grad_diffs)
+    return min_diff, max_diff
