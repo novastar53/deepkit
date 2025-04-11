@@ -7,17 +7,7 @@ import optax
 import flax.nnx as nnx
 
 
-def calc_l2_norm(x: nnx.statelib.State):
-    leaves, _ = jax.tree_util.tree_flatten(x)
-    squared_sum = sum([jnp.sum(jnp.square(l)) for l in leaves])
-    return jnp.sqrt(squared_sum)
-
-
-def cosine(x: jnp.ndarray, y: jnp.ndarray):
-    x = x.flatten()
-    y = y.flatten()
-    k = jnp.dot(x, y)
-    return k / (jnp.linalg.norm(x) * jnp.linalg.norm(y))
+from deepkit.utils import global_l2_norm, cosine
 
 
 def zero_out_next_layers(layer_prefix, params):
@@ -72,45 +62,21 @@ def loss_fn(model, batch, targets):
 def calc_ics(optimizer, batch, labels, grads, wrt_layer_id):
 
     wrt_layer = f"convs.{wrt_layer_id}"
-    # print("layer id", wrt_layer)
-    # nnx.display(opt_state)
-    # print("grad [conv 0]", grads.convs[0].conv.kernel.value[0,0,0,0])
-    # print(f"grad [conv {wrt_layer_id}]", grads.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
-    # print(f"grad [conv 9]", grads.convs[9].conv.kernel.value[0,0,0,0])
     # Set the velocities of the next layers to zero to prevent them from updating
     # the weights
-    # print("opt state [conv 0]", optimizer.opt_state[0].trace.convs[0].conv.kernel.value[0,0,0,0])
-    # print(f"opt state [conv {wrt_layer_id}]", optimizer.opt_state[0].trace.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
-    # print(f"opt state [conv 9]", optimizer.opt_state[0].trace.convs[9].conv.kernel.value[0,0,0,0])
     masked_opt_state = zero_out_next_optimizer_states(optimizer.opt_state, wrt_layer_id)
     optimizer.opt_state = masked_opt_state
-    # print("masked opt state [conv 0]", masked_opt_state[0].trace.convs[0].conv.kernel.value[0,0,0,0])
-    # print(f"masked opt state [conv {wrt_layer_id}]", masked_opt_state[0].trace.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
-    # print(f"masked opt state [conv 9]", masked_opt_state[0].trace.convs[9].conv.kernel.value[0,0,0,0])
 
     # zero out the gradients of the next layers
     masked_grads = zero_out_next_layers(wrt_layer, grads)
-    # print("masked grad [conv 0]", masked_grads.convs[0].conv.kernel.value[0,0,0,0])
-    # print(f"masked grad [conv {wrt_layer_id}]", masked_grads.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
-    # print(f"masked grad [conv 9]", masked_grads.convs[9].conv.kernel.value[0,0,0,0])
 
     # update the weights of the previous layers
-    # print("weight [conv 0]", optimizer.model.convs[0].conv.kernel.value[0,0,0,0])
-    # print(f"weight [conv {wrt_layer_id}]", optimizer.model.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
-    # print(f"weight [conv 9]", optimizer.model.convs[9].conv.kernel.value[0,0,0,0])
     optimizer.update(masked_grads)
-    # print("updated weight [conv 0]", optimizer.model.convs[0].conv.kernel.value[0,0,0,0])
-    # print(f"updated weight [conv {wrt_layer_id}]", optimizer.model.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
-    # print(f"updated weight [conv 9]", optimizer.model.convs[9].conv.kernel.value[0,0,0,0])
 
     # calculate the lookahead gradients
     (_, _), lookahead_grads = nnx.value_and_grad(loss_fn, has_aux=True)(
         optimizer.model, batch, labels
     )
-    ## print("lookahead loss", lookahead_loss)
-    # print("lookahead grad [conv 0]", lookahead_grads.convs[0].conv.kernel.value[0,0,0,0])
-    # print(f"lookahead grad [conv {wrt_layer_id}]", lookahead_grads.convs[wrt_layer_id].conv.kernel.value[0,0,0,0])
-    # print(f"lookahead grad [conv 9]", lookahead_grads.convs[9].conv.kernel.value[0,0,0,0])
 
     # pick out the gradient wrt current layer
     wrt_layer_grad = grads["convs"][wrt_layer_id]
@@ -124,8 +90,6 @@ def calc_ics(optimizer, batch, labels, grads, wrt_layer_id):
     )
     cos_angle = jax.tree_util.tree_map(cosine, wrt_layer_grad, lookahead_grad)
 
-    ## print("l2_norm [conv 3]", l2_norm.conv.kernel.value)
-    ## print("cosine angle [conv 3]", cos_angle.conv.kernel.value)
     return l2_diff, cos_angle
 
 
@@ -187,7 +151,7 @@ def grad_landscape_step(
         model = nnx.merge(graphdef, updated_state, batch_stats)
         new_grads = nnx.grad(loss_fn)(model, batch, targets)
         grad_diff = jax.tree_util.tree_map(lambda x, y: x - y, new_grads, grads)
-        l2 = calc_l2_norm(grad_diff)
+        l2 = global_l2_norm(grad_diff)
         return l2
 
     _grad_fn = partial(calc_norm, model, grads, lr)
