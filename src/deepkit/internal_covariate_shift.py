@@ -7,7 +7,7 @@ import optax
 import flax.nnx as nnx
 
 
-from deepkit.utils import global_l2_norm, cosine
+from .utils import global_l2_norm, cosine
 
 
 def zero_out_next_layers(layer_prefix, params):
