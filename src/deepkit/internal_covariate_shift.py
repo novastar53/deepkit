@@ -60,6 +60,8 @@ def loss_fn(model, batch, targets):
 
 @nnx.jit(static_argnums=[4])
 def calc_ics(optimizer, batch, labels, grads, wrt_layer_id):
+    """Calculate the gradient-based internal covariate as per 
+       Santurkar et al. (2018)."""
 
     wrt_layer = f"convs.{wrt_layer_id}"
     # Set the velocities of the next layers to zero to prevent them from updating
@@ -96,6 +98,7 @@ def calc_ics(optimizer, batch, labels, grads, wrt_layer_id):
 def santurkar_ics_step(
     optimizer: nnx.Optimizer, grads, batch: jax.Array, labels: jax.Array
 ):
+    """Calculate the gradient-based ICS for all the convolutional layers"""
 
     ics_results = []
     for i in range(len(optimizer.model.convs)):
@@ -110,6 +113,8 @@ def santurkar_ics_step(
 def loss_landscape_step(
     model, batch, targets, grads, lr: float, min_step=0.5, max_step=4.2, step_size=0.3
 ):
+    """Approximate the Lipschitzness of the loss landscape as per 
+       Santurkar et al. (2018)."""
 
     def calc_loss(model, grads, lr, s):
         graphdef, state, batch_stats = nnx.split(model, nnx.Param, nnx.BatchStat)
@@ -134,6 +139,8 @@ def loss_landscape_step(
 def grad_landscape_step(
     model, batch, targets, grads, lr: float, min_step=0.5, max_step=4.2, step_size=0.3
 ):
+    """Approximate the Lipschitzness of the gradient norm landscape as per
+       Santurkar et al. (2018)"""
 
     def calc_norm(model, grads, lr, s):
 
