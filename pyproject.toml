@@ -5,9 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">3.10,<3.13.1"
 dependencies = [
-    "flax>=0.10.5",
+    "flax==0.10.4",
     "ipykernel>=6.29.5",
-    "jax>=0.5.3",
+    "jax==0.5.2",
     "seaborn>=0.13.2",
     "torchvision>=0.21.0",
 ]
