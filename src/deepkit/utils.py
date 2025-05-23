@@ -39,22 +39,23 @@ def cosine(x: jnp.ndarray, y: jnp.ndarray):
 
 def timeit(f, *args, tries = 10, task = None):
     """Utility to time a function for multiple runs"""
-    assert task is not None
 
-    trace_name = f"t_{task}_" + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(10))
-    trace_dir = f"/tmp/{trace_name}"
+    if task is not None:
+        trace_name = f"t_{task}_" + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(10))
+        trace_dir = f"/tmp/{trace_name}"
+        print(trace_dir)
 
     outcomes_ms = []
     jax.block_until_ready(f(*args)) #warm it up!
-    jax.profiler.start_trace(trace_dir)
+    task is not None and jax.profiler.start_trace(trace_dir)
 
     for _ in range(tries):
         s = datetime.now()
         jax.block_until_ready(f(*args))
         e = datetime.now()
         outcomes_ms.append(1000*(e-s).total_seconds())
-    jax.profiler.stop_trace()
+    task is not None and jax.profiler.stop_trace()
 
     average_time_ms = sum(outcomes_ms)/len(outcomes_ms)
-    return average_time_ms, trace_dir
+    return average_time_ms 
 
