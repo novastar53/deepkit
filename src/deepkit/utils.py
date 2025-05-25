@@ -45,16 +45,20 @@ def timeit(f, *args, tries = 10, task = None):
         trace_dir = f"/tmp/{trace_name}"
         print(trace_dir)
 
-    outcomes_ms = []
-    jax.block_until_ready(f(*args)) #warm it up!
-    task is not None and jax.profiler.start_trace(trace_dir)
+    try:
+        outcomes_ms = []
+        jax.block_until_ready(f(*args)) #warm it up!
+        task is not None and jax.profiler.start_trace(trace_dir)
 
-    for _ in range(tries):
-        s = datetime.now()
-        jax.block_until_ready(f(*args))
-        e = datetime.now()
-        outcomes_ms.append(1000*(e-s).total_seconds())
-    task is not None and jax.profiler.stop_trace()
+        for _ in range(tries):
+            s = datetime.now()
+            jax.block_until_ready(f(*args))
+            e = datetime.now()
+            outcomes_ms.append(1000*(e-s).total_seconds())
+    except Exception as e:
+        print(e)
+    finally:
+        task is not None and jax.profiler.stop_trace()
 
     average_time_ms = sum(outcomes_ms)/len(outcomes_ms)
     return average_time_ms 
